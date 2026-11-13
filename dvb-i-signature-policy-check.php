@@ -97,7 +97,16 @@ function parsePolicy(string $xml): array
         }
     }
 
-    return [$fingerprints, $commonNames];
+    return [$enforcement, $fingerprints, $commonNames];
+}
+
+function policyFailureStatus(string $enforcement): int
+{
+    return match ($enforcement) {
+        'required' => 403,
+        'warn' => 409,
+        'vendor' => 422,
+    };
 }
 
 function resolvePublicAddresses(string $host): array
@@ -189,7 +198,8 @@ if (!is_array($request) || !isset($request['signaturePolicy']) || !is_string($re
 }
 
 [$host, $port] = parseTarget($request);
-[$fingerprints, $commonNames] = parsePolicy($request['signaturePolicy']);
+[$enforcement, $fingerprints, $commonNames] = parsePolicy($request['signaturePolicy']);
+$failureStatus = policyFailureStatus($enforcement);
 $addresses = resolvePublicAddresses($host);
 $lastError = '';
 foreach ($addresses as $address) {
@@ -221,8 +231,8 @@ foreach ($addresses as $address) {
     if ($matches) {
         respond(200, 'SignaturePolicy matches the target host and TLS certificate.');
     }
-    respond(403, 'Target certificate does not match the SignaturePolicy.');
+    respond($failureStatus, 'Target certificate does not match the SignaturePolicy.');
 }
 
 error_log('DVB-I policy check failed to connect: ' . $lastError);
-respond(502, 'Could not establish a verified TLS connection to the target.');
+respond($failureStatus, 'Could not establish a verified TLS connection to the target.');

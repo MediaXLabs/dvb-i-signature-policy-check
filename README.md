@@ -29,9 +29,10 @@ The endpoint accepts any DNS hostname that resolves only to public IP addresses.
 It verifies the TLS hostname and system certificate chain, then requires every
 `CAFingerprint` in the policy to match a CA certificate in the host's TLS
 certificate chain. If `SubjectConstraint` is present, every listed `CN` must
-match a common name in the host certificate's subject. A match returns HTTP 200;
-malformed input, a policy mismatch, non-public destinations, and connection
-failures return non-200 status codes.
+match a common name in the host certificate's subject. Successful validation
+returns HTTP 200. A certificate mismatch or TLS connection failure returns
+HTTP 403 for `required`, 409 for `warn`, or 422 for `vendor`. Other request and
+destination errors retain their own status codes.
 
 The public-IP check rejects destinations that resolve to private or reserved
 addresses. Since the endpoint can initiate TLS connections to any public host,
