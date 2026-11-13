@@ -1,0 +1,21 @@
+# OS/editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# PHP artifacts
+*.log
+php_errors.log
+
+# Environment files
+.env
+.env.*
+
+# Local runtime data
+/tmp/
+
+# Composer / local tool caches
+/vendor/
+composer.lock
