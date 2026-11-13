@@ -5,12 +5,6 @@ DVB-I `SignaturePolicy` (A177r8). Requires the PHP OpenSSL and DOM extensions.
 
 ## Run
 
-Set an exact hostname-and-port allowlist before exposing the endpoint:
-
-```text
-DVB_I_ALLOWED_TARGETS=service.example:443,other.example:8443
-```
-
 Start PHP's built-in server from this directory:
 
 ```sh
@@ -31,10 +25,16 @@ fingerprint. A host-only request may include `port`; it defaults to 443. The
 body may use either `target` (URL or hostname with optional port), or `host`
 and optional `port`, together with the XML policy string.
 
-The endpoint verifies the TLS hostname and system certificate chain, then
-checks the policy's CA fingerprint and optional certificate subject CN. A
-match returns HTTP 200; malformed input, a policy mismatch, disallowed
-destinations, and connection failures return non-200 status codes.
+The endpoint accepts any DNS hostname that resolves only to public IP addresses.
+It verifies the TLS hostname and system certificate chain, then checks the
+policy's CA fingerprint and optional certificate subject CN. A match returns
+HTTP 200; malformed input, a policy mismatch, non-public destinations, and
+connection failures return non-200 status codes.
 
-The exact destination allowlist and public-IP check protect against server-side
-request forgery. Restrict access to this endpoint as well.
+The public-IP check rejects destinations that resolve to private or reserved
+addresses. Since the endpoint can initiate TLS connections to any public host,
+restrict access to it and consider rate limiting before exposing it.
+
+## Credits
+
+Developed with assistance from GitHub Copilot.

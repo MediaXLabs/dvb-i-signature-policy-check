@@ -205,15 +205,6 @@ if (!is_array($request) || !isset($request['signaturePolicy']) || !is_string($re
 }
 
 [$host, $port] = parseTarget($request);
-$allowedTargets = array_filter(array_map('trim', explode(',', getenv('DVB_I_ALLOWED_TARGETS') ?: '')));
-if ($allowedTargets === []) {
-    respond(503, 'Configure DVB_I_ALLOWED_TARGETS before accepting requests.');
-}
-$authority = $host . ':' . $port;
-if (!in_array($authority, array_map('strtolower', $allowedTargets), true)) {
-    respond(403, 'Target is not in the configured allowlist.');
-}
-
 [$fingerprints, $commonNames] = parsePolicy($request['signaturePolicy']);
 $addresses = resolvePublicAddresses($host);
 $lastError = '';
