@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+// Developed with assistance from GitHub Copilot.
+
 const MAX_BODY_BYTES = 16384;
 const CONNECT_TIMEOUT_SECONDS = 5;
 
