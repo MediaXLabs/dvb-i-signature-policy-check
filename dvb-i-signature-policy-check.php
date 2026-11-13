@@ -153,8 +153,10 @@ function policyMatches($stream, array $fingerprints, array $commonNames): bool
     if (!is_array($certificateNames)) {
         $certificateNames = [$certificateNames];
     }
-    if ($commonNames !== [] && array_intersect($commonNames, $certificateNames) === []) {
-        return false;
+    foreach ($commonNames as $commonName) {
+        if (!in_array($commonName, $certificateNames, true)) {
+            return false;
+        }
     }
 
     foreach ($fingerprints as [$algorithm, $expected]) {
