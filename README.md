@@ -33,6 +33,8 @@ match a common name in the host certificate's subject. Successful validation
 returns HTTP 200. A certificate mismatch or TLS connection failure returns
 HTTP 403 for `required`, 409 for `warn`, or 422 for `vendor`. Other request and
 destination errors retain their own status codes.
+Enforcement values and hexadecimal fingerprint digits are accepted without
+regard to letter case.
 
 The public-IP check rejects destinations that resolve to private or reserved
 addresses. Since the endpoint can initiate TLS connections to any public host,

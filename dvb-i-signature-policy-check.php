@@ -62,7 +62,7 @@ function parsePolicy(string $xml): array
         respond(400, 'Provide exactly one DVB-I SignaturePolicy element.');
     }
     $policy = $policies->item(0);
-    $enforcement = trim($policy->getElementsByTagNameNS('*', 'Enforcement')->item(0)?->textContent ?? '');
+    $enforcement = strtolower(trim($policy->getElementsByTagNameNS('*', 'Enforcement')->item(0)?->textContent ?? ''));
     if (!in_array($enforcement, ['required', 'warn', 'vendor'], true)) {
         respond(400, 'SignaturePolicy has an invalid Enforcement value.');
     }
@@ -74,7 +74,7 @@ function parsePolicy(string $xml): array
             respond(400, 'SignaturePolicy uses an unsupported CA fingerprint algorithm.');
         }
         $formattedFingerprint = trim($fingerprint->textContent);
-        if (!preg_match('/\A[0-9a-fA-F]{2}(?::[0-9a-fA-F]{2})*\z/', $formattedFingerprint)) {
+        if (!preg_match('/\A[0-9a-f]{2}(?::[0-9a-f]{2})*\z/i', $formattedFingerprint)) {
             respond(400, 'SignaturePolicy contains an invalid CA fingerprint.');
         }
         $hex = strtolower(str_replace(':', '', $formattedFingerprint));
