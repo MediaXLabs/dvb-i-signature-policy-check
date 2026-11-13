@@ -131,25 +131,13 @@ function isCaCertificate($certificate): bool
         && str_contains($details['extensions']['basicConstraints'], 'CA:TRUE');
 }
 
-function certificateMatchesPolicy($certificate, array $fingerprints): bool
+function certificateMatchesFingerprint($certificate, string $algorithm, string $expected): bool
 {
     if (!isCaCertificate($certificate)) {
         return false;
     }
-    foreach ($fingerprints as [$algorithm, $expected]) {
-        $actual = openssl_x509_fingerprint($certificate, $algorithm);
-        if ($actual !== false && hash_equals($expected, strtolower($actual))) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function trustedCaFiles(): array
-{
-    $locations = openssl_get_cert_locations();
-    $files = [$locations['ini_cafile'] ?? '', $locations['default_cert_file'] ?? ''];
-    return array_values(array_unique(array_filter($files, 'is_file')));
+    $actual = openssl_x509_fingerprint($certificate, $algorithm);
+    return $actual !== false && hash_equals($expected, strtolower($actual));
 }
 
 function policyMatches($stream, array $fingerprints, array $commonNames): bool
@@ -169,25 +157,19 @@ function policyMatches($stream, array $fingerprints, array $commonNames): bool
         return false;
     }
 
-    foreach ($chain as $certificate) {
-        if (certificateMatchesPolicy($certificate, $fingerprints)) {
-            return true;
-        }
-    }
-    foreach (trustedCaFiles() as $file) {
-        $bundle = @file_get_contents($file);
-        if ($bundle === false) {
-            continue;
-        }
-        preg_match_all('/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $bundle, $matches);
-        foreach ($matches[0] as $pem) {
-            $certificate = openssl_x509_read($pem);
-            if ($certificate !== false && certificateMatchesPolicy($certificate, $fingerprints)) {
-                return true;
+    foreach ($fingerprints as [$algorithm, $expected]) {
+        $found = false;
+        foreach ($chain as $certificate) {
+            if (certificateMatchesFingerprint($certificate, $algorithm, $expected)) {
+                $found = true;
+                break;
             }
         }
+        if (!$found) {
+            return false;
+        }
     }
-    return false;
+    return true;
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
