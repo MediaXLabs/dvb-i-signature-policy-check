@@ -42,3 +42,13 @@ Copilot chat, so they can be reviewed alongside the source.
 
 For future project work, append a concise, dated entry summarizing the request,
 decisions, code/documentation changes, validation, and commit/push outcome.
+
+## 2026-11-16 (tests)
+
+- Added live integration tests for successful and failing `checkSignaturePolicy()`
+  results, including `example.com`, `www.wikipedia.org`, and `dvb.org`.
+- Added Linux and Windows PowerShell test runners and documented the network and
+  PHP extension requirements.
+- PHP syntax checks passed. Both runners completed with 3 tests passing and no
+  failures; live-host cases were skipped because outbound TLS connections were
+  unavailable in the test environment.

@@ -40,6 +40,28 @@ The public-IP check rejects destinations that resolve to private or reserved
 addresses. Since the endpoint can initiate TLS connections to any public host,
 restrict access to it and consider rate limiting before exposing it.
 
+## Tests
+
+The tests make live TLS requests to `example.com`, `www.wikipedia.org`, and
+`dvb.org`, so an internet connection is needed for the live cases. They derive
+CA fingerprints from each verified certificate chain, then exercise successful
+checks, enforcement-specific fingerprint failures, subject-name mismatches,
+invalid inputs, and an unresolvable host. Live cases are reported as skipped
+when the host cannot be reached. PHP CLI with the DOM and OpenSSL extensions is
+required.
+
+Run on Linux:
+
+```sh
+./tests/run-tests.sh
+```
+
+Run on Windows PowerShell:
+
+```powershell
+.\tests\run-tests.ps1
+```
+
 ## Use the checker without HTTP
 
 The policy check is available independently from the POST endpoint:
