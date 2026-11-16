@@ -3,8 +3,9 @@ declare(strict_types=1);
 
 // Developed with assistance from GitHub Copilot.
 
+require_once __DIR__ . '/signature-policy-checker.php';
+
 const MAX_BODY_BYTES = 16384;
-const CONNECT_TIMEOUT_SECONDS = 5;
 
 function respond(int $status, string $message): never
 {
@@ -46,60 +47,6 @@ function parseTarget(array $request): array
     return [$host, $port];
 }
 
-function parsePolicy(string $xml): array
-{
-    if (str_contains($xml, '<!DOCTYPE')) {
-        respond(400, 'DOCTYPE is not allowed in a SignaturePolicy.');
-    }
-    $document = new DOMDocument();
-    $document->resolveExternals = false;
-    $document->substituteEntities = false;
-    if (!@$document->loadXML($xml, LIBXML_NONET | LIBXML_NOBLANKS)) {
-        respond(400, 'Invalid SignaturePolicy XML.');
-    }
-    $policies = $document->getElementsByTagNameNS('*', 'SignaturePolicy');
-    if ($policies->length !== 1) {
-        respond(400, 'Provide exactly one DVB-I SignaturePolicy element.');
-    }
-    $policy = $policies->item(0);
-    $enforcement = strtolower(trim($policy->getElementsByTagNameNS('*', 'Enforcement')->item(0)?->textContent ?? ''));
-    if (!in_array($enforcement, ['required', 'warn', 'vendor'], true)) {
-        respond(400, 'SignaturePolicy has an invalid Enforcement value.');
-    }
-
-    $fingerprints = [];
-    foreach ($policy->getElementsByTagNameNS('*', 'CAFingerprint') as $fingerprint) {
-        $algorithm = strtolower(str_replace('-', '', trim($fingerprint->getAttribute('algorithm'))));
-        if (!in_array($algorithm, ['sha1', 'sha256', 'sha384', 'sha512'], true)) {
-            respond(400, 'SignaturePolicy uses an unsupported CA fingerprint algorithm.');
-        }
-        $formattedFingerprint = trim($fingerprint->textContent);
-        if (!preg_match('/\A[0-9a-f]{2}(?::[0-9a-f]{2})*\z/i', $formattedFingerprint)) {
-            respond(400, 'SignaturePolicy contains an invalid CA fingerprint.');
-        }
-        $hex = strtolower(str_replace(':', '', $formattedFingerprint));
-        if (strlen($hex) !== strlen(hash($algorithm, '', false))) {
-            respond(400, 'SignaturePolicy contains an invalid CA fingerprint.');
-        }
-        $fingerprints[] = [$algorithm, $hex];
-    }
-    if ($fingerprints === []) {
-        respond(400, 'SignaturePolicy must contain at least one CAFingerprint.');
-    }
-
-    $commonNames = [];
-    foreach ($policy->getElementsByTagNameNS('*', 'SubjectConstraint') as $constraint) {
-        foreach ($constraint->getElementsByTagNameNS('*', 'CN') as $commonName) {
-            $value = trim($commonName->textContent);
-            if ($value !== '') {
-                $commonNames[] = $value;
-            }
-        }
-    }
-
-    return [$enforcement, $fingerprints, $commonNames];
-}
-
 function policyFailureStatus(string $enforcement): int
 {
     return match ($enforcement) {
@@ -107,80 +54,6 @@ function policyFailureStatus(string $enforcement): int
         'warn' => 409,
         'vendor' => 422,
     };
-}
-
-function resolvePublicAddresses(string $host): array
-{
-    $records = @dns_get_record($host, DNS_A | DNS_AAAA);
-    if (!is_array($records)) {
-        respond(502, 'The target hostname could not be resolved.');
-    }
-    $addresses = [];
-    foreach ($records as $record) {
-        $address = $record['ip'] ?? $record['ipv6'] ?? null;
-        if ($address === null) {
-            continue;
-        }
-        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE) === false) {
-            respond(403, 'The target resolves to a non-public IP address.');
-        }
-        $addresses[] = $address;
-    }
-    if ($addresses === []) {
-        respond(502, 'The target hostname has no A or AAAA records.');
-    }
-    return array_values(array_unique($addresses));
-}
-
-function isCaCertificate($certificate): bool
-{
-    $details = openssl_x509_parse($certificate);
-    return is_array($details)
-        && isset($details['extensions']['basicConstraints'])
-        && str_contains($details['extensions']['basicConstraints'], 'CA:TRUE');
-}
-
-function certificateMatchesFingerprint($certificate, string $algorithm, string $expected): bool
-{
-    if (!isCaCertificate($certificate)) {
-        return false;
-    }
-    $actual = openssl_x509_fingerprint($certificate, $algorithm);
-    return $actual !== false && hash_equals($expected, strtolower($actual));
-}
-
-function policyMatches($stream, array $fingerprints, array $commonNames): bool
-{
-    $context = stream_context_get_params($stream)['options']['ssl'] ?? [];
-    $chain = $context['peer_certificate_chain'] ?? [];
-    if ($chain === []) {
-        return false;
-    }
-
-    $leafDetails = openssl_x509_parse($chain[0]);
-    $certificateNames = $leafDetails['subject']['CN'] ?? [];
-    if (!is_array($certificateNames)) {
-        $certificateNames = [$certificateNames];
-    }
-    foreach ($commonNames as $commonName) {
-        if (!in_array($commonName, $certificateNames, true)) {
-            return false;
-        }
-    }
-
-    foreach ($fingerprints as [$algorithm, $expected]) {
-        $found = false;
-        foreach ($chain as $certificate) {
-            if (certificateMatchesFingerprint($certificate, $algorithm, $expected)) {
-                $found = true;
-                break;
-            }
-        }
-        if (!$found) {
-            return false;
-        }
-    }
-    return true;
 }
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
@@ -198,41 +71,17 @@ if (!is_array($request) || !isset($request['signaturePolicy']) || !is_string($re
 }
 
 [$host, $port] = parseTarget($request);
-[$enforcement, $fingerprints, $commonNames] = parsePolicy($request['signaturePolicy']);
-$failureStatus = policyFailureStatus($enforcement);
-$addresses = resolvePublicAddresses($host);
-$lastError = '';
-foreach ($addresses as $address) {
-    $endpoint = str_contains($address, ':') ? "tls://[$address]:$port" : "tls://$address:$port";
-    $context = stream_context_create([
-        'ssl' => [
-            'verify_peer' => true,
-            'verify_peer_name' => true,
-            'peer_name' => $host,
-            'SNI_enabled' => true,
-            'capture_peer_cert' => true,
-            'capture_peer_cert_chain' => true,
-        ],
-    ]);
-    $stream = @stream_socket_client(
-        $endpoint,
-        $errorCode,
-        $errorMessage,
-        CONNECT_TIMEOUT_SECONDS,
-        STREAM_CLIENT_CONNECT,
-        $context
-    );
-    if ($stream === false) {
-        $lastError = $errorMessage;
-        continue;
-    }
-    $matches = policyMatches($stream, $fingerprints, $commonNames);
-    fclose($stream);
-    if ($matches) {
-        respond(200, 'SignaturePolicy matches the target host and TLS certificate.');
-    }
-    respond($failureStatus, 'Target certificate does not match the SignaturePolicy.');
+$result = checkSignaturePolicy("https://$host:$port", $request['signaturePolicy']);
+if ($result['result'] === 'No connection') {
+    error_log('DVB-I policy check failed to connect: ' . ($result['detail'] ?: $result['message']));
 }
-
-error_log('DVB-I policy check failed to connect: ' . $lastError);
-respond($failureStatus, 'Could not establish a verified TLS connection to the target.');
+$status = match ($result['result']) {
+    'OK' => 200,
+    'Fail-Required' => 403,
+    'Fail-Warn' => 409,
+    'Fail-Vendor' => 422,
+    'No connection' => policyFailureStatus($result['enforcement']),
+    'Invalid-Target', 'Invalid-Policy' => 400,
+    'Non-Public-Target' => 403,
+};
+respond($status, $result['message']);

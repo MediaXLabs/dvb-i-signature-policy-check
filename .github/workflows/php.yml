@@ -19,4 +19,6 @@ jobs:
           extensions: dom, openssl
 
       - name: Lint PHP
-        run: php -l dvb-i-signature-policy-check.php
+        run: |
+          php -l dvb-i-signature-policy-check.php
+          php -l signature-policy-checker.php

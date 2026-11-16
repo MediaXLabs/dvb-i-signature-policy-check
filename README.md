@@ -40,6 +40,25 @@ The public-IP check rejects destinations that resolve to private or reserved
 addresses. Since the endpoint can initiate TLS connections to any public host,
 restrict access to it and consider rate limiting before exposing it.
 
+## Use the checker without HTTP
+
+The policy check is available independently from the POST endpoint:
+
+```php
+require_once __DIR__ . '/signature-policy-checker.php';
+
+$result = checkSignaturePolicy('https://service.example/', $signaturePolicyXml);
+if ($result['result'] === 'OK') {
+    // The host matches the policy.
+}
+```
+
+`checkSignaturePolicy()` returns an array with `result`, `enforcement`, and
+`message` values, plus optional connection diagnostics in `detail`. Results
+include `OK`, `Fail-Required`, `Fail-Warn`, `Fail-Vendor`, and `No connection`.
+The HTTP endpoint maps those results to HTTP status codes; callers outside HTTP
+can handle them directly.
+
 ## Credits
 
 Developed with assistance from GitHub Copilot.
