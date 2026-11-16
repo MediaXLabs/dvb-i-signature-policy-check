@@ -36,4 +36,9 @@ Copilot chat, so they can be reviewed alongside the source.
 - PHP syntax checks for both files and standalone checker smoke tests passed.
 - Commit `c5a001b` contains the refactor. Pushing it failed because GitHub was
   unreachable; at the time of this note, local `main` was one commit ahead of
-  `origin/main`.
+  `origin/main`. A later push succeeded with commit `7e11601`.
+
+## Ongoing history
+
+For future project work, append a concise, dated entry summarizing the request,
+decisions, code/documentation changes, validation, and commit/push outcome.
