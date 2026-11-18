@@ -150,6 +150,75 @@ runTest('Rejects malformed policy XML', function (): void {
     expectResult($result, 'Invalid-Policy');
 });
 
+runTest('Rejects a policy without a policyId', function (): void {
+    $policyXml = '<SignaturePolicy><Enforcement>warn</Enforcement><TrustAnchor>'
+        . '<CAFingerprint algorithm="sha256">' . str_repeat('00:', 31) . '00</CAFingerprint>'
+        . '</TrustAnchor></SignaturePolicy>';
+    expectResult(checkSignaturePolicy('https://example.com/', $policyXml), 'Invalid-Policy');
+});
+
+runTest('Parses comma-separated and array reporting endpoints', function (): void {
+    $expected = ['https://a.example/report', 'https://b.example/report'];
+    $fromString = parseSignaturePolicyReportingEndpoints(' https://a.example/report, ,https://b.example/report,https://a.example/report ');
+    $fromArray = parseSignaturePolicyReportingEndpoints(['https://a.example/report', '', 'https://b.example/report']);
+    if ($fromString !== $expected || $fromArray !== $expected || parseSignaturePolicyReportingEndpoints('') !== []) {
+        throw new RuntimeException('Reporting endpoints were not parsed as expected');
+    }
+    expectResult(checkSignaturePolicy('https://example.com/', '<SignaturePolicy/>', [42]), 'Invalid-Reporting-Endpoint');
+});
+
+runTest('Builds an A177 clause 7.6.2.5 report', function (): void {
+    $report = buildSignaturePolicyReport('https://service.example/', 'urn:test:policy', 'warn', 'Mismatch', 1234);
+    $expected = [
+        'type' => 'signature-verification-issue',
+        'url' => 'https://service.example/',
+        'user_agent' => SIGNATURE_POLICY_USER_AGENT,
+        'destination' => 'dvbi-signature-validation',
+        'timestamp' => 1234,
+        'attempts' => 0,
+        'age' => 0,
+        'body' => ['policy' => 'urn:test:policy'],
+    ];
+    if ($report !== $expected) {
+        throw new RuntimeException('Unexpected report: ' . json_encode($report));
+    }
+    $vendorReport = buildSignaturePolicyReport('https://service.example/', 'urn:test:policy', 'vendor', 'Mismatch');
+    if (!isset($vendorReport['body']['vendor-action']) || isset($report['body']['vendor-action'])) {
+        throw new RuntimeException('vendor-action must be present only for vendor enforcement');
+    }
+});
+
+runTest('Reports a failure to every endpoint and refuses unsafe endpoints', function (): void {
+    $policyXml = createPolicyXml(['fingerprints' => [str_repeat('00:', 31) . '00']], 'warn');
+    $endpoints = 'http://reports.example/, https://localhost/report, https://reports.invalid/report';
+    $result = checkSignaturePolicy('https://signature-policy-test.invalid/', $policyXml, $endpoints);
+    expectResult($result, 'No connection');
+    if (count($result['reports']) !== 3) {
+        throw new RuntimeException('Expected one delivery outcome per reporting endpoint');
+    }
+    foreach ($result['reports'] as $report) {
+        if ($report['delivered'] || $report['error'] === null) {
+            throw new RuntimeException("Unsafe or unreachable endpoint {$report['endpoint']} was not refused");
+        }
+    }
+});
+
+runTest('Does not report input errors', function (): void {
+    $result = checkSignaturePolicy('http://example.com/', '<SignaturePolicy/>', 'https://reports.invalid/');
+    expectResult($result, 'Invalid-Target');
+    if ($result['reports'] !== []) {
+        throw new RuntimeException('Invalid input must not be reported');
+    }
+});
+
+runTest('POSTs a report to a live HTTPS endpoint', function (): void {
+    $report = buildSignaturePolicyReport('https://service.example/', 'urn:test:policy', 'warn', 'Test');
+    $outcome = sendSignaturePolicyReport('https://example.com/', [$report]);
+    if ($outcome['status'] === null) {
+        throw new TestSkippedException((string) $outcome['error']);
+    }
+});
+
 foreach (TEST_HOSTS as $index => $target) {
     runTest("Accepts the live TLS certificate for $target", function () use ($index, $target, &$hostPolicies): void {
         $hostPolicy = discoverHostPolicy($target);
@@ -160,11 +229,14 @@ foreach (TEST_HOSTS as $index => $target) {
             $hostPolicy['commonName'],
             $index === 0
         );
-        $result = checkSignaturePolicy($target, $policyXml);
+        $result = checkSignaturePolicy($target, $policyXml, 'https://reports.invalid/');
         if ($result['result'] === 'No connection') {
             throw new TestSkippedException($result['message']);
         }
         expectResult($result, 'OK');
+        if ($result['reports'] !== []) {
+            throw new RuntimeException('A successful check must not be reported');
+        }
         $hostPolicies[$target] = $hostPolicy;
     });
 }

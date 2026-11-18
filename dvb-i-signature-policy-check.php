@@ -6,12 +6,17 @@ declare(strict_types=1);
 require_once __DIR__ . '/signature-policy-checker.php';
 
 const MAX_BODY_BYTES = 16384;
+const MAX_REPORTING_ENDPOINTS = 10;
 
-function respond(int $status, string $message): never
+function respond(int $status, string $message, array $reports = []): never
 {
     http_response_code($status);
     header('Content-Type: application/json; charset=utf-8');
-    echo json_encode(['status' => $status, 'message' => $message], JSON_UNESCAPED_SLASHES);
+    $response = ['status' => $status, 'message' => $message];
+    if ($reports !== []) {
+        $response['reports'] = $reports;
+    }
+    echo json_encode($response, JSON_UNESCAPED_SLASHES);
     exit;
 }
 
@@ -70,8 +75,26 @@ if (!is_array($request) || !isset($request['signaturePolicy']) || !is_string($re
     respond(400, 'JSON body must include signaturePolicy as a DVB-I XML string.');
 }
 
+$reportingEndpoints = $request['reportingEndpoints'] ?? [];
+if (!is_string($reportingEndpoints) && !is_array($reportingEndpoints)) {
+    respond(400, 'reportingEndpoints must be a comma-separated string or an array of URL strings.');
+}
+try {
+    $reportingEndpoints = parseSignaturePolicyReportingEndpoints($reportingEndpoints);
+} catch (InvalidArgumentException $exception) {
+    respond(400, $exception->getMessage());
+}
+if (count($reportingEndpoints) > MAX_REPORTING_ENDPOINTS) {
+    respond(400, 'At most ' . MAX_REPORTING_ENDPOINTS . ' reporting endpoints are allowed.');
+}
+
 [$host, $port] = parseTarget($request);
-$result = checkSignaturePolicy("https://$host:$port", $request['signaturePolicy']);
+$result = checkSignaturePolicy("https://$host:$port", $request['signaturePolicy'], $reportingEndpoints);
+foreach ($result['reports'] as $report) {
+    if (!$report['delivered']) {
+        error_log("DVB-I policy report to {$report['endpoint']} failed: {$report['error']}");
+    }
+}
 if ($result['result'] === 'No connection') {
     error_log('DVB-I policy check failed to connect: ' . ($result['detail'] ?: $result['message']));
 }
@@ -81,7 +104,7 @@ $status = match ($result['result']) {
     'Fail-Warn' => 409,
     'Fail-Vendor' => 422,
     'No connection' => policyFailureStatus($result['enforcement']),
-    'Invalid-Target', 'Invalid-Policy' => 400,
+    'Invalid-Target', 'Invalid-Policy', 'Invalid-Reporting-Endpoint' => 400,
     'Non-Public-Target' => 403,
 };
-respond($status, $result['message']);
+respond($status, $result['message'], $result['reports']);

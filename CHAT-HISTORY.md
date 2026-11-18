@@ -53,3 +53,22 @@ decisions, code/documentation changes, validation, and commit/push outcome.
   failures; live-host cases were skipped because outbound TLS connections were
   unavailable in the test environment.
 - Committed and pushed these changes in `ba64106`.
+
+## 2026-11-18 (error reporting, Claude Code)
+
+- Added optional A177r8 clause 7.6.2.5 error reporting. `checkSignaturePolicy()`
+  takes a third argument with zero or more reporting endpoints, either as an
+  array or a comma-separated string. The HTTP endpoint accepts the same values
+  in `reportingEndpoints`, with at most 10 endpoints.
+- Unsuccessful validations of a parsed policy are POSTed as
+  `application/reports+json` W3C Reporting API reports with type
+  `signature-verification-issue`, destination `dvbi-signature-validation`, and
+  a body holding `policy`, plus `vendor-action` for `vendor` enforcement.
+  Invalid targets and policies are not reported. Delivery outcomes are returned
+  in `reports`.
+- Reporting endpoints must be HTTPS URLs whose hostnames resolve only to public
+  IP addresses. Each connection is made to the address that was checked.
+- `policyId` is now required, matching the schema, because reports need it.
+- The README now documents the feature and credits Claude. Tests were added
+  for the report format, endpoint parsing, unsafe endpoints, and live delivery.
+  All 16 tests passed, including the live cases.
