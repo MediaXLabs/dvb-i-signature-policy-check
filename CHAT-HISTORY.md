@@ -72,3 +72,4 @@ decisions, code/documentation changes, validation, and commit/push outcome.
 - The README now documents the feature and credits Claude. Tests were added
   for the report format, endpoint parsing, unsafe endpoints, and live delivery.
   All 16 tests passed, including the live cases.
+- Committed and pushed these changes in `c49c9e2`.
